@@ -1,4 +1,4 @@
-# Morse code clj arduino
+# Arduino-Morse - Clojure + MorseCode + Arduino
 
 Using firmata to issue commands to an arduino board. This is not running clj/cljs projects 'on' the arduino board.
 

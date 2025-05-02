@@ -1,3 +1,3 @@
-# Introduction to sandpit
+# Introduction to arduino-morse
 
-TODO: write [great documentation](http://jacobian.org/writing/what-to-write/)
+See the README.md

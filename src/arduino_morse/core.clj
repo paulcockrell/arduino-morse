@@ -1,4 +1,4 @@
-(ns sandpit.core
+(ns arduino-morse.core
   (:require [firmata.core :as fm]
             [clojure.string]))
 
