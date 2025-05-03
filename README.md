@@ -73,6 +73,6 @@ lein repl
 Initialise the board and send some morse code
 
 ```clj
-(defl b (init-board! {:port-name "cu.usbserial-2110" :led-pin 13}))
+(def b (init-board! {:port-name "cu.usbserial-2110" :led-pin 13}))
 (morse! b "sms") ;; dot dot dot dash dash dot dot dot
 ```

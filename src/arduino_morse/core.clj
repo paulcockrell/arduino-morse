@@ -1,29 +1,25 @@
 (ns arduino-morse.core
   (:require [firmata.core :as fm]
+            [clojure.core.async :as async]
             [clojure.string]))
 
 (def ^:private LED-PIN 13)
 
-;;when realised, open connection to board and set led-pin to output
-(def ^:private BOARD (delay
-                       (->  (fm/open-serial-board :auto-detect)
-                            (fm/set-pin-mode LED-PIN :output))))
-
-(def dot-duration 200)
+(def dot-duration 100)
 (def dash-duration (* 3 dot-duration))
 
 (defn init-board!
-  ([]
-   @BOARD)
-
   ([{:keys [port-name led-pin]
      :or {port-name :auto-detect
           led-pin LED-PIN}}]
    (-> (fm/open-serial-board port-name)
        (fm/set-pin-mode led-pin :output))))
 
-(defn signal-interval []
-  (Thread/sleep dot-duration))
+(defn signal-interval
+  ([]
+   (Thread/sleep dot-duration))
+  ([_]
+   (Thread/sleep dot-duration)))
 
 (defn char-interval []
   (Thread/sleep dash-duration))
@@ -32,9 +28,6 @@
   (Thread/sleep (* 7 dot-duration)))
 
 (defn blink!
-  ([duration]
-   (blink! @BOARD LED-PIN duration))
-
   ([board led-pin duration]
    (fm/set-digital board led-pin :high)
    (Thread/sleep duration)
@@ -42,9 +35,6 @@
    nil))
 
 (defn dot!
-  ([]
-   (dot! @BOARD LED-PIN dot-duration))
-
   ([board]
    (dot! board LED-PIN dot-duration))
 
@@ -52,9 +42,6 @@
    (blink! board led-pin duration)))
 
 (defn dash!
-  ([]
-   (dash! @BOARD LED-PIN dash-duration))
-
   ([board]
    (dash! board LED-PIN dash-duration))
 
@@ -99,18 +86,12 @@
                  \0 [dash! dash! dash! dash! dash!]})
 
 (defn signal-char!
-  ([char]
-   (signal-char! @BOARD char))
-
   ([board char]
    (when-let [signals (get signal-map char)]
      (doseq [signal-call (interpose (fn [_] (signal-interval)) signals)]
        (signal-call board)))))
 
 (defn signal-word!
-  ([word]
-   (signal-word! @BOARD word))
-
   ([board word]
    (let [char-call (fn [char] (fn [] (signal-char! board char)))
          calls (map char-call word)]
@@ -118,9 +99,6 @@
        (f)))))
 
 (defn signal-word-seq!
-  ([words-seq]
-   (signal-word-seq! @BOARD words-seq))
-
   ([board words-seq]
    (let [words-seq (if (sequential? words-seq) words-seq [words-seq])
          word-call (fn [word] (fn [] (signal-word! board word)))
@@ -129,26 +107,44 @@
        (f)))))
 
 (defn morse!
-  ([s]
-   (morse! @BOARD s))
-
   ([board s]
    (assert  (re-matches #"[0-9a-zA-Z\ ]+" s) "Supporting only a subset of the Morse code i.e letters, numbers and space !")
    (let [ss (clojure.string/upper-case s)
          words (clojure.string/split ss #"\s+")]
      (signal-word-seq! board words))))
 
+(defn get-firmware-info
+  [board]
+  (let [ch    (fm/event-channel board)
+        _     (fm/query-firmware board)
+        event (async/<!! ch)]
+    (prn event)))
+
 (comment
+  ;; initialize board
+  (def board (init-board! {:port-name "cu.usbserial-2110" :led-pin LED-PIN}))
 
-  (blink! 100)
-  (blink! 1000)
-  (dot!)
-  (dash!)
-  (do
-    (dot!) (signal-interval) (dot!) (signal-interval) (dash!) (signal-interval) (dash!))
+  ;; test blink
+  (blink! board LED-PIN 100)
+  (blink! board LED-PIN 1000)
 
-  (morse! "SOS")
-  (morse! "HELLO")
+  ;; test dot dash
+  (dot! board)
+  (dash! board)
+
+  ;; send code 'manually'
+  (-> board
+      (dot!)
+      (signal-interval)
+      (dot!)
+      (signal-interval)
+      (dash!)
+      (signal-interval)
+      (dash!))
+
+  ;; send morse-code
+  (morse! board "SMS")
+
   ;; Morse Code Speed
   ;; There is no agreed universal duration for the dot signal.
   ;; The minimum morse speed to qualify for a Grade II license is 5 words per minute (5 wpm).
@@ -156,7 +152,7 @@
   ;; Thus the time taken to encode "MORSE WORDS MORSE WORDS 12345" should be
   ;; less than/equal to 60s.
   (time
-   (morse! "MORSE WORDS MORSE WORDS 12345"))
+   (morse! board "MORSE WORDS MORSE WORDS 12345"))
 
   ;(release-event-channel @BOARD ch)
-  (fm/close! @BOARD))
+  (fm/close! board))
