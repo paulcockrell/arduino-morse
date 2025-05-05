@@ -1,17 +1,21 @@
 (ns arduino-morse.core
   (:require [firmata.core :as fm]
+            [firmata.receiver :as fmr]
             [clojure.core.async :as async]
             [clojure.string]))
 
-(def ^:private LED-PIN 13)
+(def ^:private ONBOARD-LED-PIN 13) ;; 13 is the onboard LED
 
-(def dot-duration 100)
+(def dot-duration 50)
 (def dash-duration (* 3 dot-duration))
 
 (defn init-board!
+  ;; Find out the port by running `ls /dev/tty*|grep userserial`
+  ([] (init-board! {:port-name "cu.usbserial-2110" :led-pin ONBOARD-LED-PIN}))
+
   ([{:keys [port-name led-pin]
      :or {port-name :auto-detect
-          led-pin LED-PIN}}]
+          led-pin ONBOARD-LED-PIN}}]
    (-> (fm/open-serial-board port-name)
        (fm/set-pin-mode led-pin :output))))
 
@@ -36,14 +40,14 @@
 
 (defn dot!
   ([board]
-   (dot! board LED-PIN dot-duration))
+   (dot! board ONBOARD-LED-PIN dot-duration))
 
   ([board led-pin duration]
    (blink! board led-pin duration)))
 
 (defn dash!
   ([board]
-   (dash! board LED-PIN dash-duration))
+   (dash! board ONBOARD-LED-PIN dash-duration))
 
   ([board led-pin duration]
    (blink! board led-pin duration)))
@@ -118,15 +122,65 @@
   (let [ch    (fm/event-channel board)
         _     (fm/query-firmware board)
         event (async/<!! ch)]
-    (prn event)))
+    (prn event)
+    (fm/release-event-channel board ch)))
+
+(defn enable-digital-pin-reporting
+  "Enable a specific pin to report events"
+  [board pin]
+  (-> board
+      (fm/enable-digital-port-reporting pin true)))
+
+(defn register-button
+  "Register a pin as an input and enable digital reporting on it"
+  [board btn-pin]
+
+  (-> board
+      (fm/set-pin-mode btn-pin :input)
+      (enable-digital-pin-reporting btn-pin)))
+
+(defn register-event
+  "Register a callback for events on a given pin"
+  [board btn-pin callback]
+  (fmr/on-digital-event board btn-pin callback))
+
+(defn register-led
+  "Register pin as an output"
+  [board led-pin]
+  (fm/set-pin-mode board led-pin :output))
 
 (comment
-  ;; initialize board
-  (def board (init-board! {:port-name "cu.usbserial-2110" :led-pin LED-PIN}))
+  ;; --- General use example ---
+
+  ;; Declare pin numbers for external components
+  (def custom-led-pin 2)
+  (def custom-btn-pin 4)
+
+  ;; AUTO board initialization
+  (def board (init-board!))
+
+  ;; MANUAL board initialization
+  ;; Find out the board port by running `ls /dev/tty*|grep userserial`
+  (def board (init-board! {:port-name "cu.usbserial-2110" :led-pin custom-led-pin}))
+
+  ;; Register a button
+  (register-button board custom-btn-pin)
+
+  ;; Register a led
+  (register-led board custom-led-pin)
+
+  ;; Register event on the button to flash led
+  (register-event board custom-btn-pin
+                  (fn [event]
+                    (println "Event received:" event)
+                    (when (= :high (:value event))
+                      (blink! board custom-led-pin 500))))
+
+  ;; --- Morse code stuff ---
 
   ;; test blink
-  (blink! board LED-PIN 100)
-  (blink! board LED-PIN 1000)
+  (blink! board ONBOARD-LED-PIN 100)
+  (blink! board ONBOARD-LED-PIN 1000)
 
   ;; test dot dash
   (dot! board)
@@ -142,7 +196,7 @@
       (signal-interval)
       (dash!))
 
-  ;; send morse-code
+  ;; send single morse-code message
   (morse! board "SMS")
 
   ;; Morse Code Speed
@@ -154,5 +208,5 @@
   (time
    (morse! board "MORSE WORDS MORSE WORDS 12345"))
 
-  ;(release-event-channel @BOARD ch)
+  ;;(release-event-channel @BOARD ch)
   (fm/close! board))
